@@ -2,9 +2,10 @@ pub use self::tetris::Game;
 
 mod tetris {
     use rand::{thread_rng, Rng};
-
+    use std::cmp::min;
+    
     // Private Data
-
+    
     // Global constant for the number of cordinates in a Tetrimino
     const CORD_NUM: usize = 3; // Doesn't count the center
     const NUM_MINOS: usize = 3; // Number of held minos
@@ -65,7 +66,6 @@ mod tetris {
 
     const BLACK: usize = 7;
 
-    // TODO Define Colors
     const COLOR_LIST: [[u8; 3]; 8] = [
         [236, 217, 50], // Shape O = Yellow
         [235, 128, 32], // Shape I = Orange
@@ -74,8 +74,17 @@ mod tetris {
         [42, 255, 223], // Shape L = Cyan
         [34, 142, 255], // Shape J = Blue
         [186, 35, 230], // Shape T = Purple
-        [23, 23, 23],   // Black
+        [0, 0, 0],   // Black
     ];
+
+    const MAX_LEVEL : usize = 19;
+    const DROP_TICKS : [u16; MAX_LEVEL+1] = [  
+      // 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
+        30, 28, 26, 24, 22, 20, 18, 16, 14, 12,
+      //10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+        10,  9,  8,  7,  6,  5,  4,  3,  2,  1
+    ];
+
 
     // Possible shapes
     #[derive(Copy, Clone)]
@@ -263,8 +272,8 @@ mod tetris {
         has_held: bool,
 
         // Invisble componenets of Tetris
-        level: u8,
-        pub drop_speed: u16, // Called speed but actually Milliseconds
+        level: usize,
+        pub drop_ticks: u16, // Called speed but actually Milliseconds
 
         // Displayed values for the game
         pub lines: u16,
@@ -275,29 +284,15 @@ mod tetris {
     impl Game {
         // Constructor
         pub fn new() -> Game {
-            let mut tetris: Game = Default::default();
-
-            for i in 0..B_LEN {
-                for j in 0..B_HEI {
-                    tetris.board[i][j].state = State::Empty;
-                }
-            }
-
-            tetris.curr_mino = Mino::new();
-
-            for i in 0..NUM_MINOS {
-                tetris.next_minos[i] = Mino::new();
-            }
-
-            tetris.has_held = false;
-            tetris.level = 1;
-            tetris.drop_speed = 950;
-
-            tetris.lines = 0;
-            tetris.time = 0;
-            tetris.score = 0;
-
-            return tetris;
+            let mut tetris = Game {
+                curr_mino : Mino::new(),
+                next_minos : [Mino::new(), Mino::new(), Mino::new()],
+                drop_ticks : DROP_TICKS[0],
+                .. Default::default()
+            };
+            tetris.update_pos();
+            tetris.update_preview();
+            tetris
         }
 
         fn can_rotate(&self) -> bool {
@@ -341,6 +336,7 @@ mod tetris {
         pub fn rotate(&mut self) {
             if self.can_rotate() {
                 self.curr_mino.rotate();
+                self.update_pos();
             }
         }
 
@@ -380,6 +376,7 @@ mod tetris {
         pub fn shift(&mut self, dir: bool) {
             if self.can_shift(dir) {
                 self.curr_mino.shift(dir);
+                self.update_pos();
             }
         }
 
@@ -430,7 +427,7 @@ mod tetris {
         }
 
         // The updates the location of the current tetrimino
-        pub fn update_pos(&mut self) {
+        fn update_pos(&mut self) {
             let drop = self.drop_distance();
             let piece = &self.curr_mino;
 
@@ -523,18 +520,6 @@ mod tetris {
             }
         }
 
-        // Calculates the speed based on what the current level is
-        fn calc_speed(&mut self) {
-            let new_speed = 950.0 - 37.5 * self.level as f32;
-            if new_speed < 0.0
-            // just in case
-            {
-                self.drop_speed = 0;
-            } else {
-                self.drop_speed = new_speed as u16;
-            }
-        }
-
         // Reads the possible rows to clear and if they are full clears
         fn line_up(&mut self) {
             let mut num_rows = 0;
@@ -564,8 +549,7 @@ mod tetris {
             }
 
             if self.lines / (4 * (self.level + 1)) as u16 != 0 {
-                self.level += 1;
-                self.calc_speed();
+                self.level = min(MAX_LEVEL, self.level +1);
             }
         }
 
@@ -575,7 +559,7 @@ mod tetris {
             let cx = piece.center[0] as usize;
             let cy = piece.center[1] as usize;
 
-            if cy as i32 - 1 < 0 || self.board[cx][cy - 1].state == State::Placed {
+            if cy <= 0 || self.board[cx][cy - 1].state == State::Placed {
                 return false;
             }
 
@@ -585,23 +569,25 @@ mod tetris {
 
                 if x == cx && y > cy {
                     continue;
-                } else if y as i8 - 1 < 0 || self.board[x][y - 1].state == State::Placed {
+                } else if y <= 0 || self.board[x][y - 1].state == State::Placed {
                     return false;
                 }
             }
             return true;
         }
 
-        pub fn fall_or_place(&mut self) -> bool {
-            if self.can_fall_one() {
-                self.curr_mino.fall();
-                return true;
-            } else {
-                self.place();
-                self.line_up();
-                self.release_next();
+        pub fn fall_or_place(&mut self) {
+            self.drop_ticks -= 1;
+            if self.drop_ticks <= 0 {
+                if self.can_fall_one() {
+                    self.curr_mino.fall();
+                } else {
+                    self.place();
+                    self.line_up();
+                    self.release_next();
+                }
+                self.drop_ticks = DROP_TICKS[self.level];
                 self.update_pos();
-                return false;
             }
         }
 

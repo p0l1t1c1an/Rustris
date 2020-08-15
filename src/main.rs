@@ -1,6 +1,6 @@
 mod tetris;
 
-use std::time::{Duration, Instant};
+use std::{time::Duration,thread::sleep};
 use tetris::Game;
 
 use sdl2::{
@@ -24,10 +24,9 @@ const SCR_LEN: u32 = BLOCK * (PAD as usize * 3 + B_LEN + S_LEN) as u32;
 const SCR_HEI: u32 = BLOCK * (PAD as usize * 2 + B_HEI) as u32;
 
 // Draws the initial screen and board setup
-fn init_screen(canvas: &mut Canvas<Window>) {
+fn draw_screen(canvas: &mut Canvas<Window>) {
     canvas.set_draw_color(Color::RGB(70, 70, 70));
     canvas.clear();
-    canvas.present();
 }
 
 // Draws the Falling and Place Minos in Game Board
@@ -81,6 +80,7 @@ fn draw_next_and_held(game: &Game, canvas: &mut Canvas<Window>) {
 }
 
 fn update_all(game: &Game, canvas: &mut Canvas<Window>) {
+    draw_screen(canvas);
     draw_board(game, canvas);
     draw_next_and_held(game, canvas);
     canvas.present();
@@ -97,64 +97,33 @@ fn main() {
         .unwrap();
 
     let mut canvas = window.into_canvas().present_vsync().build().unwrap();
-    init_screen(&mut canvas);
-
-    let mut game = Game::new();
     let mut event_pump = sdl_context.event_pump().unwrap();
+    
+    let mut game = Game::new();
+    let delay = Duration::from_millis(25); 
 
-    let input_delay = Duration::from_millis(150);
-    let mut fall_delay = Duration::from_millis(game.drop_speed as u64);
-    let (mut input_time, mut fall_time) = (Instant::now(), Instant::now());
+    'Rustris: loop { 
+        game.fall_or_place();
+        update_all(&game, &mut canvas);
+        sleep(delay);
 
-    'Rustris: loop {
         for event in event_pump.poll_iter() {
             match event {
-                Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => {
-                    break 'Rustris;
-                }
-
-                Event::KeyDown { keycode: code, .. } => {
-                    if input_time.elapsed() >= input_delay {
-                        match code {
-                            Some(Keycode::Up) => {
-                                game.rotate();
-                            }
-                            Some(Keycode::Down) => {
-                                game.drop();
-                            }
-                            Some(Keycode::Left) => {
-                                game.shift(false);
-                            }
-                            Some(Keycode::Right) => {
-                                game.shift(true);
-                            }
-                            Some(Keycode::PageUp) | Some(Keycode::PageDown) => {
-                                game.hold();
-                            }
-                            _ => {}
-                        }
-
-                        game.update_pos();
-                        update_all(&game, &mut canvas);
-                        input_time = Instant::now();
+                Event::KeyDown { keycode: Some(code), .. } => {
+                    match code {
+                        Keycode::Escape => break 'Rustris,
+                        Keycode::Up => game.rotate(),
+                        Keycode::Down => game.drop(),
+                        Keycode::Left => game.shift(false),
+                        Keycode::Right => game.shift(true),
+                        Keycode::PageUp | Keycode::PageDown => game.hold(),
+                        _ => {}
                     }
                 }
                 _ => {}
             }
-        }
-
-        if fall_time.elapsed() > fall_delay {
-            if game.fall_or_place() {
-                game.update_pos();
-            }
-            update_all(&game, &mut canvas);
-            fall_time = Instant::now();
-            fall_delay = Duration::from_millis(game.drop_speed as u64);
-        }
+        }   
     }
 
-    println!("{}", game.drop_speed);
+    println!("{}", game.drop_ticks);
 }
